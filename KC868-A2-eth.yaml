@@ -1,0 +1,156 @@
+# Basic Config, created from https://devices.esphome.io/devices/KinCony-KC868-A2
+esphome:
+  name: kicony-kc868-a2
+  friendly_name: KinCony KC868-A2
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api: {}
+
+ota:
+
+# Comment lines above to disable WIFI
+#wifi:
+#  ssid: !secret wifi_ssid
+#  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+#  ap:
+#    ssid: "KinCony KC868-A2"
+#    password: "fill_this"
+
+ethernet:
+  type: LAN8720
+  mdc_pin: GPIO23
+  mdio_pin: GPIO18
+  clk_mode: GPIO17_OUT
+  phy_addr: 0
+
+switch:
+  # Hidden gate controle relay not displayed on HA
+  - platform: gpio
+    pin: 15
+    id: relay1
+    name: "a2-REALAY1"
+    disabled_by_default: true
+    internal: true
+  # Control switch lights with timer
+  - platform: gpio
+    pin: 2
+    id: relay2
+    name: "Lights"
+    icon: "mdi:lightbulb-group-outline"
+    on_turn_on:
+      - logger.log:
+          format: "Power on lights for %.1f minutes"
+          args: [ '(id(light_timer).state)']
+      - switch.turn_on: relay2
+      - delay: !lambda 'return  ((id(light_timer).state) * 1000 * 60);' # Convert to ms
+      - switch.turn_off: relay2
+
+number:
+  # Timer input for lights
+  - platform: template
+    name: "Light timer"
+    id: light_timer
+    icon: "mdi:timeline-clock"
+    unit_of_measurement: "m" # minutes
+    mode: slider
+    optimistic: true
+    restore_value: true # Store value in memory
+    min_value: 1
+    max_value: 60
+    step: 1
+
+binary_sensor:
+  # Gate state, based on closing and opening
+  - platform: template
+    name: "Gate state"
+    id: gate_state
+    icon: "mdi:gate"
+    device_class: "door"
+  # Gate closing, active when door is controled
+  - platform: template
+    name: "Gate closing"
+    id: gate_closing
+    icon: "mdi:boom-gate-arrow-down"
+    device_class: "moving"
+  # Gate opening, active when door is controled
+  - platform: template
+    name: "Gate opening"
+    id: gate_opening
+    icon: "mdi:boom-gate-arrow-up"
+  # Dry input 1
+  - platform: gpio
+    name: "Dry input 1"
+    pin:
+      number: 39
+      inverted: true
+  # Dry input 2
+  - platform: gpio
+    name: "Dry input 2"
+    pin:
+      number: 36
+      inverted: true
+  # GPIO 1, used to sense opening of the gate, internal sensor not displayed on HA
+  - platform: gpio
+    name: "a2-GPIO1"
+    id: opening_gate
+    pin:
+      number: 33
+      inverted: true
+    disabled_by_default: true
+    internal: true
+    # SET the gate_state open at the end & gate_opening
+    on_press:
+      - binary_sensor.template.publish:
+          id: gate_opening
+          state: ON
+      - logger.log: "Opening the gate"
+    on_release:
+      - binary_sensor.template.publish:
+          id: gate_state
+          state: ON
+      - binary_sensor.template.publish:
+          id: gate_opening
+          state: OFF
+  # GPIO 2, used to sense closing of the gate, hidden sensor not displayed on HA
+  - platform: gpio
+    name: "a2-GPIO2"
+    id: closing_gate
+    pin:
+      number: 14
+      inverted: true
+    disabled_by_default: true
+    internal: true
+    # SET the gate_state closed at the end & gate_closing
+    on_press:
+      - binary_sensor.template.publish:
+          id: gate_closing
+          state: ON
+      - logger.log: "Closing the gate"
+    on_release:
+      - binary_sensor.template.publish:
+          id: gate_state
+          state: OFF
+      - binary_sensor.template.publish:
+          id: gate_closing
+          state: OFF
+
+button:
+  # Sends 500ms pulse on gate relay
+  - platform: template
+    name: "Gate Remote"
+    id: gate_remotre
+    icon: "mdi:gate"
+    on_press:
+      - switch.turn_on: relay1
+      - delay: 500ms
+      - switch.turn_off: relay1
